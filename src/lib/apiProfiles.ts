@@ -42,7 +42,7 @@ export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
 
-const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'sb2api-async', 'fal'])
+const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'sb2api-async', 'newapi-async', 'fal'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
   generationPath: 'images/generations',
   editPath: 'images/edits',
@@ -103,6 +103,30 @@ const SUB2API_PROVIDER: CustomProviderDefinition = {
   },
 }
 
+const NEWAPI_PROVIDER: CustomProviderDefinition = {
+  id: 'newapi-async',
+  name: 'New API（异步）',
+  template: 'http-image',
+  submit: {
+    path: 'tasks/openai-image',
+    method: 'POST',
+    contentType: 'json',
+    body: DEFAULT_GENERATE_BODY,
+    taskIdPath: 'task_id',
+  },
+  poll: {
+    path: 'tasks/{task_id}',
+    method: 'GET',
+    intervalSeconds: 3,
+    statusPath: 'status',
+    successValues: ['SUCCESS'],
+    failureValues: ['FAILURE'],
+    errorPath: 'fail_reason',
+    // New API 的图片需从独立产物接口读取。
+    result: {},
+  },
+}
+
 type ApiProfileProviderDraft = NonNullable<ApiProfile['providerDrafts']>[ApiProvider]
 
 function getDefaultStreamImages(provider: ApiProvider, apiMode: ApiMode): boolean {
@@ -148,7 +172,7 @@ function normalizeZipDownloadRoutes(value: unknown) {
 function normalizeProviderOrder(value: unknown, customProviders: CustomProviderDefinition[]): string[] | undefined {
   if (!Array.isArray(value)) return undefined
 
-  const providerIds = ['openai', 'sb2api-async', 'fal', ...customProviders.map((provider) => provider.id)]
+  const providerIds = ['openai', 'sb2api-async', 'newapi-async', 'fal', ...customProviders.map((provider) => provider.id)]
   const knownIds = new Set(providerIds)
   const ordered = value
     .map(String)
@@ -589,7 +613,7 @@ export function normalizeApiProfile(
     apiMode,
     reasoningEffort: normalizeReasoningEffort(record.reasoningEffort, defaults.reasoningEffort),
     codexCli: Boolean(record.codexCli),
-    apiProxy: provider === 'sb2api-async' ? false : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
+    apiProxy: (provider === 'sb2api-async' || provider === 'newapi-async') ? false : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
     streamImages,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, defaults.streamPartialImages),
@@ -782,6 +806,7 @@ export function getAgentImageApiProfile(settings: Partial<AppSettings> | unknown
 
 export function getCustomProviderDefinition(settings: Partial<AppSettings> | unknown, provider: ApiProvider): CustomProviderDefinition | null {
   if (provider === 'sb2api-async') return SUB2API_PROVIDER
+  if (provider === 'newapi-async') return NEWAPI_PROVIDER
   const normalized = normalizeSettings(settings)
   return normalized.customProviders.find((item) => item.id === provider) ?? null
 }
@@ -790,6 +815,7 @@ export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, pr
   if (provider === 'fal') return 'fal.ai'
   if (provider === 'openai') return 'OpenAI'
   if (provider === 'sb2api-async') return SUB2API_PROVIDER.name
+  if (provider === 'newapi-async') return NEWAPI_PROVIDER.name
   return getCustomProviderDefinition(settings, provider)?.name ?? provider
 }
 

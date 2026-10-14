@@ -10,7 +10,7 @@
 
 **基于 OpenAI gpt-image-2.5 API 的图片生成与编辑工具**
 
-提供简洁精美的 Web UI，支持 OpenAI / OpenAI 兼容接口、sub2api（异步）、fal.ai 与可导入的自定义 HTTP 供应商。<br>
+提供简洁精美的 Web UI，支持 OpenAI / OpenAI 兼容接口、sub2api（异步）、New API（异步）、fal.ai 与可导入的自定义 HTTP 供应商。<br>
 支持文本生图、参考图、画板标注与遮罩编辑，数据纯本地化存储，带来流畅的历史记录与参数管理体验。
 
 <br>
@@ -150,7 +150,7 @@
 ### 🔌 多配置与供应商增强
 - **多配置管理**：保存多个 API 配置（供应商、API Key、模型等）并快速切换；可一键复制当前配置到列表底部，配置和供应商列表均可拖拽排序。
 - **多模型切换**：模型 ID 可用逗号分隔填写多个（如 `gpt-image-2.5-sunburst, gpt-image-2`），在首页切换，按配置分别记住；预置配置、URL 传参与导入导出均支持此写法。
-- **多供应商接入**：内置 OpenAI 兼容接口（`Images API` / `Responses API`）、sub2api（异步）、fal.ai（队列），并可通过 JSON 导入自定义 HTTP 供应商（同步/异步任务）。
+- **多供应商接入**：内置 OpenAI 兼容接口（`Images API` / `Responses API`）、sub2api（异步）、New API（异步）、fal.ai（队列），并可通过 JSON 导入自定义 HTTP 供应商（同步/异步任务）。
 - **Agent 模式独立 API 配置**：Agent 可使用原生（Responses API）或混合（Responses API + Images API）的独立配置，适配不支持 `image_generation` 工具的供应商或模型。
 - **API 代理**：OpenAI 兼容接口与 fal.ai 均可配置自定义代理；OpenAI 兼容接口还可走同源 `/api-proxy/`，由 Docker 或本地开发服务器转发，绕开浏览器 CORS 限制。
 - **Codex CLI 兼容模式**：上游为 Codex CLI 时，按其实际支持的参数发送请求，并把多图生成拆成并发单图。
@@ -493,7 +493,7 @@ VITE_DEFAULT_API_URL=https://你的域名?settings=%7B%22profiles%22%3A%5B...%5D
 顶层字段：
 
 - **`profiles`**（数组）：预置的 API 配置列表，每项对应用户配置列表中的一个配置。
-- **`customProviders`**（可选数组）：自定义供应商定义，见下文 [自定义供应商](#custom-provider-config)。只使用内置供应商（OpenAI 兼容、sub2api（异步）、fal.ai）时可省略。
+- **`customProviders`**（可选数组）：自定义供应商定义，见下文 [自定义供应商](#custom-provider-config)。只使用内置供应商（OpenAI 兼容、sub2api（异步）、New API（异步）、fal.ai）时可省略。
 - **`agent`**（可选对象）：Agent 的独立 API 模式及文本、图像配置选择，见下方示例。
 
 `profiles` 中每项的字段：
@@ -503,7 +503,7 @@ VITE_DEFAULT_API_URL=https://你的域名?settings=%7B%22profiles%22%3A%5B...%5D
 | `id` | 定向更新时填写 | 配置标识，见表下说明。 |
 | `name` | 是 | 配置名称。 |
 | `description` | 否 | 配置说明，支持 Markdown，显示在“当前配置”下方的说明卡片中。 |
-| `provider` | 是 | `"openai"`（OpenAI 兼容）、`"sb2api-async"`（sub2api 异步）、`"fal"`（fal.ai），或 `customProviders` 中的供应商 ID。 |
+| `provider` | 是 | `"openai"`（OpenAI 兼容）、`"sb2api-async"`（sub2api 异步）、`"newapi-async"`（New API 异步）、`"fal"`（fal.ai），或 `customProviders` 中的供应商 ID。 |
 | `baseUrl` | 是 | API 基础地址，末尾 `/` 的规则见表下说明；fal.ai 可留空。 |
 | `apiKey` | 否 | API Key。建议省略，由用户自行填写。 |
 | `model` | 是 | 模型 ID。多个模型以逗号分隔，默认使用第一个，用户可在首页切换。 |
@@ -563,6 +563,33 @@ VITE_DEFAULT_API_URL=https://你的域名?settings=%7B%22profiles%22%3A%5B...%5D
       "provider": "fal",
       "baseUrl": "",
       "model": "openai/gpt-image-2"
+    }
+  ]
+}
+```
+
+### New API 异步生图
+
+在设置的「服务商类型」中选择 **New API（异步）**，填写 New API 地址、API Key 和渠道支持的模型，保存后即可提交生图。此选项适配启用了 `openai-image` 后台任务插件的 New API；普通同步 Images 接口仍使用「OpenAI 兼容接口」。
+
+- 提交 `POST /v1/tasks/openai-image`，保存响应中的 `task_id`。
+- 立即查询 `GET /v1/tasks/{task_id}`，未完成时每 3 秒查询一次；`SUCCESS` 表示完成，`FAILURE` 显示后端的 `fail_reason`。
+- 完成后读取 `GET /v1/tasks/{task_id}/artifacts`，下载其中所有图片产物并存入图库。产物链接使用服务端签名访问，不附加 API Key。
+- 获得任务 ID 后，刷新或重新打开页面会继续查询已有任务，不会重新提交生图。提交阶段仍受配置的请求超时限制，后续轮询不受此超时限制。网络中断、HTTP 408 / 429 / 5xx 会继续重试。
+- 当前后端插件只支持文生图，包括多张图片；参考图和遮罩编辑会在提交前提示不支持。
+- 异步模式使用直接请求，不支持项目现有的 API 代理。网页版需要任务 API 和图片产物地址允许前端跨域访问；后端返回的产物地址也必须可访问。
+
+也可使用以下预置配置，API Key 在界面中填写：
+
+```json
+{
+  "profiles": [
+    {
+      "id": "newapi-image",
+      "name": "New API 异步生图",
+      "provider": "newapi-async",
+      "baseUrl": "https://api.example.com/v1",
+      "model": "gpt-image-2.5-sunburst"
     }
   ]
 }

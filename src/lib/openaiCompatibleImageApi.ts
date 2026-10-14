@@ -24,6 +24,7 @@ import {
   pickActualParams,
   PROMPT_REWRITE_GUARD_PREFIX,
 } from './imageApiShared'
+import { getNewApiTaskImages } from './newApiImageArtifacts'
 import { getImageGenerationModel } from './imageModels'
 import { apiFetch, FetchConnectError } from './platform'
 import { isEventStreamResponse, readJsonServerSentEvents } from './serverSentEvents'
@@ -437,6 +438,9 @@ async function parseResponsesApiStreamResponse(
 }
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
+  if (profile.provider === 'newapi-async' && (opts.inputImageDataUrls.length || opts.maskDataUrl)) {
+    throw new Error('New API（异步）当前仅支持文生图，不支持参考图或遮罩编辑，请切换到支持编辑的服务商。')
+  }
   if (customProvider) {
     const n = opts.params.n > 0 ? opts.params.n : 1
     const submitMapping = opts.inputImageDataUrls.length > 0 && customProvider.editSubmit
@@ -895,6 +899,7 @@ async function pollCustomTaskResult(
     }
     if (state === 'success') {
       try {
+        if (profile.provider === 'newapi-async') return await getNewApiTaskImages(profile, taskId, mime, signal)
         return await extractCustomImages(taskPayload, poll.result, mime, signal)
       } catch (err) {
         if (!signal?.aborted && isRecoverablePollingError(err)) continue

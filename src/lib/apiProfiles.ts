@@ -114,6 +114,18 @@ const NEWAPI_PROVIDER: CustomProviderDefinition = {
     body: DEFAULT_GENERATE_BODY,
     taskIdPath: 'task_id',
   },
+  editSubmit: {
+    path: 'tasks/openai-image',
+    method: 'POST',
+    contentType: 'json',
+    body: {
+      ...DEFAULT_EDIT_BODY,
+      action: 'image_to_image',
+      images: '$inputImages.references',
+      mask: '$mask.reference',
+    },
+    taskIdPath: 'task_id',
+  },
   poll: {
     path: 'tasks/{task_id}',
     method: 'GET',

@@ -1,4 +1,4 @@
-import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
+import { MAX_INPUT_IMAGES, DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import {
@@ -438,8 +438,9 @@ async function parseResponsesApiStreamResponse(
 }
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
-  if (profile.provider === 'newapi-async' && (opts.inputImageDataUrls.length || opts.maskDataUrl)) {
-    throw new Error('New API（异步）当前仅支持文生图，不支持参考图或遮罩编辑，请切换到支持编辑的服务商。')
+  if (profile.provider === 'newapi-async') {
+    if (opts.maskDataUrl && !opts.inputImageDataUrls.length) throw new Error('遮罩编辑需要至少一张参考图')
+    if (opts.inputImageDataUrls.length > MAX_INPUT_IMAGES) throw new Error(`编辑最多支持 ${MAX_INPUT_IMAGES} 张参考图`)
   }
   if (customProvider) {
     const n = opts.params.n > 0 ? opts.params.n : 1
@@ -709,9 +710,11 @@ function createCustomProviderContext(opts: CallApiOptions, profile: ApiProfile) 
     inputImages: {
       dataUrls: opts.inputImageDataUrls.length ? opts.inputImageDataUrls : undefined,
       count: opts.inputImageDataUrls.length,
+      references: opts.inputImageDataUrls.map((image_url) => ({ image_url })),
     },
     mask: {
       dataUrl: opts.maskDataUrl,
+      reference: opts.maskDataUrl ? { image_url: opts.maskDataUrl } : undefined,
     },
   }
 }
@@ -828,6 +831,9 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
         (resolved as Record<string, unknown>).response_format = 'b64_json'
       }
       body = JSON.stringify(resolved)
+      if (profile.provider === 'newapi-async' && new Blob([body]).size > 4 * 1024 * 1024) {
+        throw new Error('New API 异步请求不能超过 4 MiB（包含 Base64 图片、遮罩和提示词），请缩小图片或减少参考图数量')
+      }
     }
   }
 

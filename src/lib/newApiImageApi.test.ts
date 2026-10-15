@@ -115,12 +115,64 @@ describe('New API 异步生图', () => {
     await expect(callImageApi(opts)).rejects.toThrow('无法从响应中提取异步任务 ID')
   })
 
-  it.each([
-    { inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='] },
-    { maskDataUrl: 'data:image/png;base64,aW1hZ2U=' },
-  ])('参考图或遮罩在请求前提示不支持', async (input) => {
+  it.each([false, true])('使用 JSON 提交参考图编辑并取得异步结果，遮罩：%s', async (withMask) => {
+    const inputImageDataUrls = ['data:image/png;base64,aW1hZ2U=', 'data:image/webp;base64,aW1hZ2U=']
+    const maskDataUrl = withMask ? 'data:image/png;base64,bWFzaw==' : undefined
+    const onCustomTaskEnqueued = vi.fn()
     const fetch = vi.spyOn(globalThis, 'fetch')
-    await expect(callImageApi({ ...opts, ...input })).rejects.toThrow('当前仅支持文生图')
+      .mockResolvedValueOnce(json({ task_id: 'edit-1' }, 202))
+      .mockResolvedValueOnce(json({ status: 'SUCCESS' }))
+      .mockResolvedValueOnce(json(artifacts))
+      .mockResolvedValueOnce(image())
+    const result = await callImageApi({ ...opts, inputImageDataUrls, maskDataUrl, onCustomTaskEnqueued })
+    expect(fetch.mock.calls[0][0]).toBe('https://api.example.com/v1/tasks/openai-image')
+    const init = fetch.mock.calls[0][1]!
+    expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
+    const body = JSON.parse(String(init.body))
+    expect(body).toMatchObject({
+      model: profile.model,
+      prompt: opts.prompt,
+      n: 2,
+      action: 'image_to_image',
+      images: inputImageDataUrls.map((image_url) => ({ image_url })),
+    })
+    if (withMask) expect(body.mask).toEqual({ image_url: maskDataUrl })
+    else expect(body).not.toHaveProperty('mask')
+    expect(body).not.toHaveProperty('image')
+    expect(onCustomTaskEnqueued).toHaveBeenCalledExactlyOnceWith({ taskId: 'edit-1' })
+    expect(fetch.mock.calls[1][0]).toBe('https://api.example.com/v1/tasks/edit-1')
+    expect(result.images).toEqual(['data:image/png;base64,aW1hZ2U='])
+  })
+
+  it('文生图不携带编辑字段', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(json({ task_id: 'task-1' }, 202))
+      .mockResolvedValueOnce(json({ status: 'SUCCESS' }))
+      .mockResolvedValueOnce(json(artifacts))
+      .mockResolvedValueOnce(image())
+    await callImageApi(opts)
+    const body = JSON.parse(String(fetch.mock.calls[0][1]?.body))
+    expect(body).not.toHaveProperty('images')
+    expect(body).not.toHaveProperty('mask')
+    expect(body).not.toHaveProperty('action')
+  })
+
+  it.each([
+    { input: { maskDataUrl: 'data:image/png;base64,aW1hZ2U=' }, error: '遮罩编辑需要至少一张参考图' },
+    { input: { inputImageDataUrls: Array(17).fill('data:image/png;base64,aW1hZ2U=') }, error: '编辑最多支持 16 张参考图' },
+  ])('无主图遮罩或参考图超限时不提交请求', async ({ input, error }) => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    await expect(callImageApi({ ...opts, ...input })).rejects.toThrow(error)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('完整 JSON 请求超过 4 MiB 时在提交前报错', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch')
+    await expect(callImageApi({
+      ...opts,
+      prompt: '猫'.repeat(1400000),
+      inputImageDataUrls: ['data:image/png;base64,aW1hZ2U='],
+    })).rejects.toThrow('不能超过 4 MiB')
     expect(fetch).not.toHaveBeenCalled()
   })
 

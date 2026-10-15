@@ -1492,7 +1492,7 @@ export default function SettingsModal() {
 
               {activeProfile.provider === 'newapi-async' && (
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  需要启用 openai-image 任务插件的 New API。提交后自动查询结果，刷新页面可继续恢复任务。当前仅支持文生图，不支持参考图或遮罩编辑。
+                  需要启用 openai-image 任务插件的 New API。提交后自动查询结果，刷新页面可继续恢复任务。支持文生图、参考图编辑和遮罩编辑；编辑功能需要后端插件 1.2.0 或更高版本。
                 </p>
               )}
 

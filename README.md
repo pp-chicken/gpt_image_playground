@@ -179,7 +179,7 @@ Windows 用户可以直接安装桌面客户端；网页版可以部署到 Verce
 
 **安装**
 
-- 在 [Releases](https://github.com/CookSleep/gpt_image_playground/releases/latest) 中下载以 `_x64-setup.exe` 结尾的安装包。
+- 在 [Releases](https://github.com/pp-chicken/gpt_image_playground/releases/latest) 中下载以 `_x64-setup.exe` 结尾的安装包。
 - 安装包没有代码签名，遇到 SmartScreen 提示时点击“更多信息 → 仍要运行”。
 - 安装到普通文件夹（如 `D:\Apps\GPT Image Playground`）。装到 `C:\Program Files` 等需要管理员权限写入的位置会导致无法保存数据。
 - 数据默认保存在 `<安装目录>\data` 中，可在“设置 → 数据管理”中更改。

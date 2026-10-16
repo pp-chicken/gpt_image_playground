@@ -1,12 +1,12 @@
 import { createRef, useEffect } from 'react'
 import { create } from 'zustand'
 import type { ReleaseCache, ReleaseInfo } from '../lib/releaseUpdates'
-import { getReleasesApiUrl, isReleaseCacheFresh, RELEASE_CACHE_TTL_MS, mergeReleasePage, parseReleaseCache, parseReleasePage } from '../lib/releaseUpdates'
+import { RELEASE_REPO, getReleaseRequestError, getReleasesApiUrl, isReleaseCacheFresh, RELEASE_CACHE_TTL_MS, mergeReleasePage, parseReleaseCache, parseReleasePage } from '../lib/releaseUpdates'
 import { readLocal, writeLocal } from '../lib/localRecord'
 import { apiFetch } from '../lib/platform'
 
-const CACHE_KEY = 'release-cache-v1'
-const IGNORED_KEY = 'ignored-release-version'
+const CACHE_KEY = `release-cache-v1:${RELEASE_REPO}`
+const IGNORED_KEY = `ignored-release-version:${RELEASE_REPO}`
 
 interface ReleaseUpdatesState {
   releases: ReleaseInfo[]
@@ -33,8 +33,7 @@ export const updateModalScrollRef = createRef<HTMLDivElement>()
 async function fetchReleasePage(page: number) {
   // 客户端由 Rust 侧发出，不依赖 CSP 的 connect-src 和 GitHub 的 CORS；网页版即原生 fetch
   const res = await apiFetch(getReleasesApiUrl(page), { headers: { Accept: 'application/vnd.github+json' } })
-  if (res.status === 403 || res.status === 429) throw new Error('GitHub 请求过于频繁，请稍后再试')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw new Error(await getReleaseRequestError(res))
   return parseReleasePage(await res.json())
 }
 

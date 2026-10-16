@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   compareVersions,
+  getReleasesApiUrl,
+  getReleaseRequestError,
+  RELEASES_PAGE_URL,
   isReleaseCacheFresh,
   MANUAL_CHECK_MIN_INTERVAL_MS,
   mergeReleasePage,
@@ -16,7 +19,7 @@ const rawRelease = (tag: string, extra: Record<string, unknown> = {}) => ({
   tag_name: tag,
   body: `## ${tag}`,
   published_at: '2026-10-08T12:00:00Z',
-  html_url: `https://github.com/CookSleep/gpt_image_playground/releases/tag/${tag}`,
+  html_url: `https://github.com/pp-chicken/gpt_image_playground/releases/tag/${tag}`,
   ...extra,
 })
 
@@ -56,10 +59,10 @@ describe('parseReleasePage', () => {
       version: '0.8.0',
       body: '## v0.8.0',
       publishedAt: '2026-10-08T12:00:00Z',
-      url: 'https://github.com/CookSleep/gpt_image_playground/releases/tag/v0.8.0',
+      url: 'https://github.com/pp-chicken/gpt_image_playground/releases/tag/v0.8.0',
     })
     // 非 https 的链接替换为仓库的 Release 页面
-    expect(result.releases[1].url).toBe('https://github.com/CookSleep/gpt_image_playground/releases/tag/v0.7.17')
+    expect(result.releases[1].url).toBe('https://github.com/pp-chicken/gpt_image_playground/releases/tag/v0.7.17')
   })
 
   it('不是数组时抛出错误', () => {
@@ -146,4 +149,36 @@ describe('stripReleaseHeading', () => {
   it('只去掉第一个标题', () => {
     expect(stripReleaseHeading('## v0.7.17\n## v0.7.17 补充', '0.7.17')).toBe('## v0.7.17 补充')
   })
+})
+
+it('更新检查和发布页面使用当前仓库', () => {
+  expect(getReleasesApiUrl(1)).toBe('https://api.github.com/repos/pp-chicken/gpt_image_playground/releases?per_page=10&page=1')
+  expect(RELEASES_PAGE_URL).toBe('https://github.com/pp-chicken/gpt_image_playground/releases')
+})
+
+afterEach(() => vi.unstubAllEnvs())
+
+it('配置更新代理后只请求代理，并固定分页参数', () => {
+  vi.stubEnv('VITE_RELEASE_PROXY_URL', 'https://updates.example.com/releases')
+  expect(getReleasesApiUrl(2)).toBe('https://updates.example.com/releases?page=2')
+})
+
+it.each(['http://updates.example.com/releases', 'https://user:token@updates.example.com/releases'])(
+  '拒绝不安全的代理地址 %s', (url) => {
+    vi.stubEnv('VITE_RELEASE_PROXY_URL', url)
+    expect(() => getReleasesApiUrl(1)).toThrow('HTTPS 地址')
+  },
+)
+
+it.each([
+  [401, {}, '', '凭据无效'],
+  [403, {}, 'Resource not accessible', '无权访问'],
+  [403, { 'x-ratelimit-remaining': '0' }, '', '过于频繁'],
+  [403, {}, 'secondary rate limit', '过于频繁'],
+  [429, {}, '', '过于频繁'],
+  [404, {}, '', '不存在'],
+  [502, {}, '', 'HTTP 502'],
+] as const)('区分更新接口错误 %s %j', async (status, headers, message, expected) => {
+  const response = new Response(JSON.stringify({ message }), { status, headers })
+  expect(await getReleaseRequestError(response)).toContain(expected)
 })

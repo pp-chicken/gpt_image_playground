@@ -1,4 +1,6 @@
-export const RELEASE_REPO = 'CookSleep/gpt_image_playground'
+import { readRuntimeEnv } from './runtimeEnv'
+
+export const RELEASE_REPO = 'pp-chicken/gpt_image_playground'
 export const RELEASES_PAGE_URL = `https://github.com/${RELEASE_REPO}/releases`
 export const RELEASES_PER_PAGE = 10
 // GitHub API 未登录每小时限 60 次，一小时内复用本地缓存
@@ -24,7 +26,27 @@ export interface ReleaseCache {
 }
 
 export function getReleasesApiUrl(page: number) {
+  const proxy = readRuntimeEnv(import.meta.env.VITE_RELEASE_PROXY_URL)
+  if (proxy) {
+    const url = new URL(proxy)
+    if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw new Error('更新代理必须配置为不含凭据和片段的 HTTPS 地址')
+    url.searchParams.set('page', String(page))
+    return url.toString()
+  }
   return `https://api.github.com/repos/${RELEASE_REPO}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`
+}
+
+/** 同时处理 GitHub 直连和更新代理的错误，不把权限问题误报为限流。 */
+export async function getReleaseRequestError(res: Response): Promise<string> {
+  const payload = await res.json().catch(() => null)
+  const message = typeof payload?.message === 'string' ? payload.message : ''
+  if (res.status === 429 || (res.status === 403 && (
+    res.headers.get('x-ratelimit-remaining') === '0' || res.headers.has('retry-after') || /rate limit|abuse/i.test(message)
+  ))) return '更新检查请求过于频繁，请稍后再试'
+  if (res.status === 401) return '更新服务 GitHub 凭据无效或已过期，请联系管理员'
+  if (res.status === 403) return '更新服务无权访问 GitHub 仓库，请检查 Token 权限或访问策略'
+  if (res.status === 404) return '更新仓库或代理地址不存在，或更新服务没有访问权限'
+  return `更新检查失败：HTTP ${res.status}`
 }
 
 /** 按数字逐段比较版本号，忽略前缀 v 和预发布后缀 */
